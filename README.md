@@ -1,6 +1,5 @@
-# raylib4Gamecube
-raylib4Gamecube is a raylib port for Nintendo Gamecube
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/S6S6TSF2C)
+# raylib4Wii
+raylib4Wii is a raylib port for Nintendo Wii
 
 <img align="left" style="width:260px" src="https://github.com/raysan5/raylib/blob/master/logo/raylib_logo_animation.gif" width="288px">
 
@@ -16,7 +15,7 @@ Ready to learn? Jump to [code examples!](https://www.raylib.com/examples.html)
 
 Change log
 ===========================
- - 22/4/2026 Initial raylib4Gamecube public release
+ ## WIP - I will update this when I have the time
  
 
   Credits
