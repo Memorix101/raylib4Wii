@@ -20,7 +20,7 @@ TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=
-TEXTURES	:=	textures 
+TEXTURES	:=	textures
 INCLUDES	:=
 
 #---------------------------------------------------------------------------------

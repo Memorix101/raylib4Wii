@@ -14,8 +14,8 @@
 
 #include <raylib.h>
 #include <stdio.h>
-#define ATTR_DREAMCAST_WIDTH 640
-#define ATTR_DREAMCAST_HEIGHT 480
+#define ATTR_WII_WIDTH 640
+#define ATTR_WII_HEIGHT 480
 
 
 static bool done = false;
@@ -25,6 +25,7 @@ static bool restart = false;
 void updateController()
 {
     bool startPressed;
+    bool homePressed;
     bool aPressed;
 
     if(!IsGamepadAvailable(0))
@@ -33,13 +34,15 @@ void updateController()
         return;
     }
 
-    startPressed = IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT);
+    startPressed = IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT);  // Wiimote PLUS / GC START
+    homePressed  = IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE);        // Wiimote HOME
     aPressed = IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
 
-    if(startPressed)
+    // PLUS or HOME quits the app (HOME returns to the Wii loader / Homebrew Channel)
+    if(startPressed || homePressed)
         done = true;
 
-    if(aPressed) 
+    if(aPressed)
         restart = true;
 }
 
@@ -60,12 +63,11 @@ int main(void)
 {
     // Initialization
     //--------------------------------------------------------------------------------------
-    const int screenWidth = ATTR_DREAMCAST_WIDTH;
-    const int screenHeight = ATTR_DREAMCAST_HEIGHT;
+    const int screenWidth = ATTR_WII_WIDTH;
+    const int screenHeight = ATTR_WII_HEIGHT;
 
     InitWindow(screenWidth, screenHeight, "raylib [shapes] example - raylib logo animation");
-    //TRACELOG(LOG_INFO, "PLATFORM: calling dreamcast gl init");
-    //glKosInit();
+
     int logoPositionX = screenWidth/2 - 128;
     int logoPositionY = screenHeight/2 - 128;
 
@@ -197,8 +199,20 @@ int main(void)
             else if (state == 4)
             {
                 DrawText("raylib4Consoles will return with raylib 6", screenWidth/2-195, screenHeight/2-78, 20, GRAY);
-                DrawText("powered by raylib4Gamecube [A] REPLAY", screenWidth/2-200, screenHeight/2-38, 20, GRAY);
+                DrawText("powered by raylib4Wii [A] REPLAY", screenWidth/2-200, screenHeight/2-38, 20, GRAY);
             }
+
+            // Cursor test: the Wii Remote IR pointer is mapped onto the raylib mouse,
+            // so GetMousePosition() follows where the remote points at the screen.
+            // Press A to "click" (changes the cursor colour).
+            Vector2 cursor = GetMousePosition();
+            bool pointerDown = IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+            Color cursorColor = pointerDown ? RED : DARKBLUE;
+
+            DrawCircleV(cursor, pointerDown ? 12.0f : 8.0f, Fade(cursorColor, 0.4f));
+
+            DrawText(TextFormat("IR cursor: %.0f, %.0f %s", cursor.x, cursor.y, pointerDown ? "[A]" : ""),
+                     10, 10, 20, DARKGRAY);
         EndDrawing();
         //----------------------------------------------------------------------------------
     }

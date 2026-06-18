@@ -1,0 +1,404 @@
+diff --git a/src/Makefile b/src/Makefile
+index 48764465..eecfbf4e 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -42,6 +42,8 @@
+ #         - Nintendo 64 (MIPS4300)
+ #     > PLATFORM_GAMECUBE:
+ #         - Nintendo GAMECUBE
++#     > PLATFORM_WII:
++#         - Nintendo WII
+ #     > PLATFORM_PLAYSTATION2:
+ #         - PlayStation 2
+ #     > PLATFORM_PSP:
+@@ -282,6 +284,13 @@ ifeq ($(PLATFORM),PLATFORM_GAMECUBE)
+     PLATFORM_SHELL = sh
+ endif
+ 
++#Nintendo Wii
++ifeq ($(PLATFORM),PLATFORM_WII)
++    PLATFORM_OS = WII
++    PLATFORM_SHELL = sh
++endif
++
++
+ #PlayStation Platforms
+ ifeq ($(PLATFORM),PLATFORM_PLAYSTATION2)
+     PLATFORM_OS = PLAYSTATION2
+@@ -384,6 +393,11 @@ ifeq ($(PLATFORM),PLATFORM_GAMECUBE)
+     GRAPHICS = GRAPHICS_API_OPENGL_11
+ endif
+ 
++ifeq ($(PLATFORM),PLATFORM_WII)
++    # By default use OpenGL 1.1 on Wii
++    GRAPHICS = GRAPHICS_API_OPENGL_11
++endif
++
+ ifeq ($(PLATFORM),PLATFORM_PLAYSTATION2)
+     # By default use OpenGL 1.1 on PLAYSTATION2
+     GRAPHICS = GRAPHICS_API_OPENGL_11
+@@ -488,6 +502,12 @@ include $(DEVKITPRO)/libogc2/gamecube_rules
+     AR = $(DEVKITPPC)/bin/powerpc-eabi-ar
+ endif
+ 
++ifeq ($(PLATFORM),PLATFORM_WII)
++include $(DEVKITPRO)/libogc2/wii_rules
++    CC = $(DEVKITPPC)/bin/powerpc-eabi-gcc
++    AR = $(DEVKITPPC)/bin/powerpc-eabi-ar
++endif
++
+ ifeq ($(PLATFORM),PLATFORM_DREAMCAST)
+     CC = $(KOS_CC)
+     AR = $(KOS_AR)
+@@ -895,8 +915,20 @@ ifeq ($(PLATFORM),PLATFORM_NINTENDO64)
+ endif
+ 
+ ifeq ($(PLATFORM),PLATFORM_GAMECUBE)
+-    CFLAGS = -g -O2 -Wall $(MACHDEP)  -Wno-error=incompatible-pointer-types -D$(PLATFORM) -D$(GRAPHICS) 
++    CFLAGS = -g -O2 -Wall $(MACHDEP)  -Wno-error=incompatible-pointer-types -D$(PLATFORM) -D$(GRAPHICS)
+     INCLUDE_PATHS = -I$(DEVKITPRO)/libogc2/gamecube/include
++    # Libraries required when linking a GameCube app (or a shared raylib). Order matters.
++    LDFLAGS += -L$(DEVKITPRO)/libogc2/gamecube/lib
++    LDLIBS = -lopengx -lfat -logc -lm
++endif
++
++ifeq ($(PLATFORM),PLATFORM_WII)
++    CFLAGS = -g -O2 -Wall $(MACHDEP)  -Wno-error=incompatible-pointer-types -D$(PLATFORM) -D$(GRAPHICS)
++    INCLUDE_PATHS = -I$(DEVKITPRO)/libogc2/wii/include
++    # Libraries required when linking a Wii app (or a shared raylib). Order matters:
++    # wiikeyboard -> wiiuse -> bte -> logc (each depends on the next), opengx before logc.
++    LDFLAGS += -L$(DEVKITPRO)/libogc2/wii/lib
++    LDLIBS = -lopengx -lwiikeyboard -lwiiuse -lbte -lfat -logc -lm
+ endif
+ 
+ ifeq ($(PLATFORM),PLATFORM_DREAMCAST)
+@@ -1074,7 +1106,7 @@ rtext.o : rtext.c raylib.h
+ 	$(CC) -c $< $(CFLAGS) $(INCLUDE_PATHS)
+ 
+ # Compile models module
+-rmodels.o : rmodels.c raylib.h rlgl.h raymath.h
++rmodels.o : rmodels.c raylib.h rlgl.h raymath.h external/cgltf.h external/cgltf_write.h external/tinyobj_loader_c.h external/vox_loader.h external/m3d.h external/par_shapes.h
+ 	$(CC) -c $< $(CFLAGS) $(INCLUDE_PATHS)
+ 
+ # Compile audio module
+@@ -1135,6 +1167,10 @@ ifeq ($(PLATFORM),PLATFORM_GAMECUBE)
+ PREFIX = $(DEVKITPRO)/libogc2/gamecube
+ endif
+ 
++ifeq ($(PLATFORM),PLATFORM_WII)
++PREFIX = $(DEVKITPRO)/libogc2/wii
++endif
++
+ ifeq ($(PLATFORM),PLATFORM_DREAMCAST)
+ PREFIX ?= $(KOS_PORTS)/raylib4dc/inst
+ endif
+diff --git a/src/external/cgltf.h b/src/external/cgltf.h
+index 316a11df..b0c15beb 100644
+--- a/src/external/cgltf.h
++++ b/src/external/cgltf.h
+@@ -1112,6 +1112,43 @@ static void cgltf_default_file_release(const struct cgltf_memory_options* memory
+ 
+ static cgltf_result cgltf_parse_json(cgltf_options* options, const uint8_t* json_chunk, cgltf_size size, cgltf_data** out_data);
+ 
++/* raylib: glTF buffer data and GLB header fields are stored little-endian; convert
++   to host order so parsing works on big-endian targets (PowerPC / Nintendo Wii, GameCube) */
++#if defined(GEKKO) || defined(__BIG_ENDIAN__) || (defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__))
++	#define CGLTF_BIG_ENDIAN 1
++#else
++	#define CGLTF_BIG_ENDIAN 0
++#endif
++
++static uint32_t cgltf_read_u32_le(const void* ptr)
++{
++	uint32_t v;
++	memcpy(&v, ptr, 4);
++#if CGLTF_BIG_ENDIAN
++	v = ((v & 0xFF000000u) >> 24) | ((v & 0x00FF0000u) >> 8) |
++	    ((v & 0x0000FF00u) << 8)  | ((v & 0x000000FFu) << 24);
++#endif
++	return v;
++}
++
++static uint16_t cgltf_read_u16_le(const void* ptr)
++{
++	uint16_t v;
++	memcpy(&v, ptr, 2);
++#if CGLTF_BIG_ENDIAN
++	v = (uint16_t)(((v & 0xFF00u) >> 8) | ((v & 0x00FFu) << 8));
++#endif
++	return v;
++}
++
++static float cgltf_read_f32_le(const void* ptr)
++{
++	uint32_t u = cgltf_read_u32_le(ptr);
++	float f;
++	memcpy(&f, &u, 4);
++	return f;
++}
++
+ cgltf_result cgltf_parse(const cgltf_options* options, const void* data, cgltf_size size, cgltf_data** out_data)
+ {
+ 	if (size < GlbHeaderSize)
+@@ -1136,7 +1173,7 @@ cgltf_result cgltf_parse(const cgltf_options* options, const void* data, cgltf_s
+ 
+ 	uint32_t tmp;
+ 	// Magic
+-	memcpy(&tmp, data, 4);
++	tmp = cgltf_read_u32_le(data);
+ 	if (tmp != GlbMagic)
+ 	{
+ 		if (fixed_options.type == cgltf_file_type_invalid)
+@@ -1164,7 +1201,7 @@ cgltf_result cgltf_parse(const cgltf_options* options, const void* data, cgltf_s
+ 
+ 	const uint8_t* ptr = (const uint8_t*)data;
+ 	// Version
+-	memcpy(&tmp, ptr + 4, 4);
++	tmp = cgltf_read_u32_le(ptr + 4);
+ 	uint32_t version = tmp;
+ 	if (version != GlbVersion)
+ 	{
+@@ -1172,7 +1209,7 @@ cgltf_result cgltf_parse(const cgltf_options* options, const void* data, cgltf_s
+ 	}
+ 
+ 	// Total length
+-	memcpy(&tmp, ptr + 8, 4);
++	tmp = cgltf_read_u32_le(ptr + 8);
+ 	if (tmp > size)
+ 	{
+ 		return cgltf_result_data_too_short;
+@@ -1187,14 +1224,14 @@ cgltf_result cgltf_parse(const cgltf_options* options, const void* data, cgltf_s
+ 
+ 	// JSON chunk: length
+ 	uint32_t json_length;
+-	memcpy(&json_length, json_chunk, 4);
++	json_length = cgltf_read_u32_le(json_chunk);
+ 	if (json_length > size - GlbHeaderSize - GlbChunkHeaderSize)
+ 	{
+ 		return cgltf_result_data_too_short;
+ 	}
+ 
+ 	// JSON chunk: magic
+-	memcpy(&tmp, json_chunk + 4, 4);
++	tmp = cgltf_read_u32_le(json_chunk + 4);
+ 	if (tmp != GlbMagicJsonChunk)
+ 	{
+ 		return cgltf_result_unknown_format;
+@@ -1212,14 +1249,14 @@ cgltf_result cgltf_parse(const cgltf_options* options, const void* data, cgltf_s
+ 
+ 		// Bin chunk: length
+ 		uint32_t bin_length;
+-		memcpy(&bin_length, bin_chunk, 4);
++		bin_length = cgltf_read_u32_le(bin_chunk);
+ 		if (bin_length > size - GlbHeaderSize - GlbChunkHeaderSize - json_length - GlbChunkHeaderSize)
+ 		{
+ 			return cgltf_result_data_too_short;
+ 		}
+ 
+ 		// Bin chunk: magic
+-		memcpy(&tmp, bin_chunk + 4, 4);
++		tmp = cgltf_read_u32_le(bin_chunk + 4);
+ 		if (tmp != GlbMagicBinChunk)
+ 		{
+ 			return cgltf_result_unknown_format;
+@@ -2219,11 +2256,11 @@ static cgltf_ssize cgltf_component_read_integer(const void* in, cgltf_component_
+ 	switch (component_type)
+ 	{
+ 		case cgltf_component_type_r_16:
+-			return *((const int16_t*) in);
++			return (int16_t)cgltf_read_u16_le(in);
+ 		case cgltf_component_type_r_16u:
+-			return *((const uint16_t*) in);
++			return cgltf_read_u16_le(in);
+ 		case cgltf_component_type_r_32u:
+-			return *((const uint32_t*) in);
++			return cgltf_read_u32_le(in);
+ 		case cgltf_component_type_r_8:
+ 			return *((const int8_t*) in);
+ 		case cgltf_component_type_r_8u:
+@@ -2238,9 +2275,9 @@ static cgltf_size cgltf_component_read_index(const void* in, cgltf_component_typ
+ 	switch (component_type)
+ 	{
+ 		case cgltf_component_type_r_16u:
+-			return *((const uint16_t*) in);
++			return cgltf_read_u16_le(in);
+ 		case cgltf_component_type_r_32u:
+-			return *((const uint32_t*) in);
++			return cgltf_read_u32_le(in);
+ 		case cgltf_component_type_r_8u:
+ 			return *((const uint8_t*) in);
+ 		default:
+@@ -2252,7 +2289,7 @@ static cgltf_float cgltf_component_read_float(const void* in, cgltf_component_ty
+ {
+ 	if (component_type == cgltf_component_type_r_32f)
+ 	{
+-		return *((const float*) in);
++		return cgltf_read_f32_le(in);
+ 	}
+ 
+ 	if (normalized)
+@@ -2261,9 +2298,9 @@ static cgltf_float cgltf_component_read_float(const void* in, cgltf_component_ty
+ 		{
+ 			// note: glTF spec doesn't currently define normalized conversions for 32-bit integers
+ 			case cgltf_component_type_r_16:
+-				return *((const int16_t*) in) / (cgltf_float)32767;
++				return (int16_t)cgltf_read_u16_le(in) / (cgltf_float)32767;
+ 			case cgltf_component_type_r_16u:
+-				return *((const uint16_t*) in) / (cgltf_float)65535;
++				return cgltf_read_u16_le(in) / (cgltf_float)65535;
+ 			case cgltf_component_type_r_8:
+ 				return *((const int8_t*) in) / (cgltf_float)127;
+ 			case cgltf_component_type_r_8u:
+@@ -2499,13 +2536,13 @@ static cgltf_uint cgltf_component_read_uint(const void* in, cgltf_component_type
+ 			return *((const uint8_t*) in);
+ 
+ 		case cgltf_component_type_r_16:
+-			return *((const int16_t*) in);
++			return (int16_t)cgltf_read_u16_le(in);
+ 
+ 		case cgltf_component_type_r_16u:
+-			return *((const uint16_t*) in);
++			return cgltf_read_u16_le(in);
+ 
+ 		case cgltf_component_type_r_32u:
+-			return *((const uint32_t*) in);
++			return cgltf_read_u32_le(in);
+ 
+ 		default:
+ 			return 0;
+diff --git a/src/rcore.c b/src/rcore.c
+index d1bc18ac..468f38e1 100644
+--- a/src/rcore.c
++++ b/src/rcore.c
+@@ -39,6 +39,8 @@
+ *           - Nintendo 64 (MIPS4300)
+ *       > PLATFORM_GAMECUBE:
+ *           - Nintendo Gamecube
++*       > PLATFORM_WII:
++*           - Nintendo Wii
+ *       > PLATFORM_PLAYSTATION2:
+ *           - PlayStation 2
+ *       > PLATFORM_PSP:
+@@ -574,6 +576,8 @@ const char *TextFormat(const char *text, ...); // Formatting of text with variab
+     #include "platforms/rcore_nintendo64.c"
+ #elif defined(PLATFORM_GAMECUBE)
+     #include "platforms/rcore_gamecube.c"
++#elif defined(PLATFORM_WII)
++    #include "platforms/rcore_wii.c"
+ #elif defined(PLATFORM_PLAYSTATION2)
+     #include "platforms/rcore_playstation2.c"
+ #elif defined(PLATFORM_PSP)
+@@ -642,7 +646,7 @@ const char *TextFormat(const char *text, ...); // Formatting of text with variab
+ // Initialize window and OpenGL context
+ void InitWindow(int width, int height, const char *title)
+ {
+-#if defined(PLATFORM_PLAYSTATION2) || defined(PLATFORM_PSP) || defined(PLATFORM_PSP_SDL) || defined(PLATFORM_VITA) || defined(PLATFORM_ORBIS) || defined(PLATFORM_PROSPERO) || defined(PLATFORM_GAMECUBE)
++#if defined(PLATFORM_PLAYSTATION2) || defined(PLATFORM_PSP) || defined(PLATFORM_PSP_SDL) || defined(PLATFORM_VITA) || defined(PLATFORM_ORBIS) || defined(PLATFORM_PROSPERO) || defined(PLATFORM_GAMECUBE) || defined(PLATFORM_WII)
+     SetTraceLogCallback(CustomLog);
+ #endif 
+     TRACELOG(LOG_INFO, "Initializing raylib %s", RAYLIB_VERSION);
+@@ -671,6 +675,8 @@ void InitWindow(int width, int height, const char *title)
+     TRACELOG(LOG_INFO, "Platform backend: NINTENDO64");
+ #elif defined(PLATFORM_GAMECUBE)
+     TRACELOG(LOG_INFO, "Platform backend: GAMECUBE");
++#elif defined(PLATFORM_WII)
++    TRACELOG(LOG_INFO, "Platform backend: WII");
+ #elif defined(PLATFORM_PSP)
+     TRACELOG(LOG_INFO, "Platform backend: PSP");
+ #elif defined(PLATFORM_PSP_SDL)
+@@ -4320,7 +4326,7 @@ void InitTimer(void)
+     timeBeginPeriod(1); // Setup high-resolution timer to 1ms (granularity of 1-2 ms)
+ #endif
+ 
+-#if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__EMSCRIPTEN__) || defined(PLATFORM_DREAMCAST) || defined(PLATFORM_PSP) || defined(PLATFORM_PSP_SDL) ||defined(PLATFORM_ORBIS) || defined(PLATFORM_PROSPERO) || defined(PLATFORM_GAMECUBE)
++#if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__EMSCRIPTEN__) || defined(PLATFORM_DREAMCAST) || defined(PLATFORM_PSP) || defined(PLATFORM_PSP_SDL) ||defined(PLATFORM_ORBIS) || defined(PLATFORM_PROSPERO) || defined(PLATFORM_GAMECUBE) || defined(PLATFORM_WII)
+     struct timespec now = { 0 };
+ 
+     if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) // Success
+diff --git a/src/rlgl.h b/src/rlgl.h
+index d219ca5e..8f6590ed 100644
+--- a/src/rlgl.h
++++ b/src/rlgl.h
+@@ -3462,6 +3462,19 @@ unsigned int rlLoadTexture(const void *data, int width, int height, int format,
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);       // Set texture to clamp on x-axis
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);       // Set texture to clamp on y-axis
+     }
++#elif defined(PLATFORM_WII) || defined(PLATFORM_GAMECUBE)
++    // GX REPEAT/MIRROR wrap modes only work with power-of-two textures (they address texels with
++    // a POT bitmask); a NPOT texture with REPEAT renders sheared. Use CLAMP_TO_EDGE for NPOT.
++    if (((width & (width - 1)) == 0) && ((height & (height - 1)) == 0))
++    {
++        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
++        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
++    }
++    else
++    {
++        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);   // NPOT: clamp to avoid GX REPEAT shearing
++        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++    }
+ #else
+     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);       // Set texture to repeat on x-axis
+     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);       // Set texture to repeat on y-axis
+diff --git a/src/rmodels.c b/src/rmodels.c
+index 9f6a7135..eba4c931 100644
+--- a/src/rmodels.c
++++ b/src/rmodels.c
+@@ -5459,6 +5459,25 @@ static BoneInfo *LoadBoneInfoGLTF(cgltf_skin skin, int *boneCount)
+     return bones;
+ }
+ 
++// Byte-swap a value in place to convert little-endian glTF buffer data to host order.
++// NOTE: glTF buffer data is always little-endian; on big-endian targets (PowerPC /
++// Nintendo Wii, GameCube) it must be swapped. This is a no-op on little-endian hosts.
++static inline void rlGltfSwap(void *value, int size)
++{
++#if defined(GEKKO) || defined(__BIG_ENDIAN__) || (defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__))
++    unsigned char *b = (unsigned char *)value;
++    for (int i = 0; i < size/2; i++)
++    {
++        unsigned char t = b[i];
++        b[i] = b[size - 1 - i];
++        b[size - 1 - i] = t;
++    }
++#else
++    (void)value;
++    (void)size;
++#endif
++}
++
+ // Load glTF file into model struct, .gltf and .glb supported
+ static Model LoadGLTF(const char *fileName)
+ {
+@@ -5503,7 +5522,9 @@ static Model LoadGLTF(const char *fileName)
+         {\
+             for (int l = 0; l < numComp; l++) \
+             {\
+-                dstPtr[numComp*k + l] = (dstType)buffer[n + l];\
++                srcType v = buffer[n + l]; \
++                rlGltfSwap(&v, sizeof(srcType)); \
++                dstPtr[numComp*k + l] = (dstType)v;\
+             }\
+             n += (int)(accesor->stride/sizeof(srcType));\
+         }\
+diff --git a/src/rtext.c b/src/rtext.c
+index 12daed4e..07d706fa 100644
+--- a/src/rtext.c
++++ b/src/rtext.c
+@@ -235,7 +235,7 @@ extern void LoadFontDefault(void)
+ 
+     // Re-construct image from defaultFontData and generate OpenGL texture
+     //----------------------------------------------------------------------
+-#if defined(PLATFORM_DREAMCAST) || defined(PLATFORM_NINTENDO64) || defined(PLATFORM_PLAYSTATION2) || defined(PLATFORM_GAMECUBE)
++#if defined(PLATFORM_DREAMCAST) || defined(PLATFORM_NINTENDO64) || defined(PLATFORM_PLAYSTATION2) || defined(PLATFORM_GAMECUBE) || defined(PLATFORM_WII)
+     /*#if defined(PLATFORM_PLAYSTATION2)
+         
+             Image imFont = {
+@@ -270,7 +270,7 @@ extern void LoadFontDefault(void)
+                 #if defined(PLATFORM_DREAMCAST) || defined(PLATFORM_PLAYSTATION2) 
+                 ((unsigned int *)imFont.data)[i + j] = 0x000000ff;
+                 #endif
+-                #if defined(PLATFORM_NINTENDO64) || defined(PLATFORM_GAMECUBE)
++                #if defined(PLATFORM_NINTENDO64) || defined(PLATFORM_GAMECUBE) || defined(PLATFORM_WII)
+                 ((unsigned int *)imFont.data)[i + j] = 0xff000000;
+                 #endif
+             

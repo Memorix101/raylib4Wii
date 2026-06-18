@@ -55,3 +55,5 @@ dkms.conf
 #mac
 .DS_Store
 ._*
+
+/raylib
