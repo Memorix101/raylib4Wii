@@ -180,9 +180,7 @@ A USB keyboard (via libwiikeyboard) is supported through raylib's keyboard API:
   the big-endian PowerPC CPU, so they may load incorrectly. glTF (`.gltf`/`.glb`)
   is handled.
 
-  Credits
-===========================
-  
+#  Credits
  - @raysan5 for his amazing work with raylib and raylib has an incredible community developing in the open way!!!! 
  - @extremscorner for libogc2
  - @psxdev for raylib4Gamecube
