@@ -181,9 +181,9 @@ A USB keyboard (via libwiikeyboard) is supported through raylib's keyboard API:
   is handled.
 
 #  Credits
- - @raysan5 for his amazing work with raylib and raylib has an incredible community developing in the open way!!!! 
- - @extremscorner for libogc2
- - @psxdev for raylib4Gamecube
+ - [@raysan5](https://www.github.com/raysan5) for his amazing work with raylib and raylib has an incredible community developing in the open way!!!! 
+ - [@extremscorner](https://www.github.com/extremscorner) for libogc2
+ - [@psxdev](https://www.github.com/psxdev) for raylib4Gamecube
  - all people involved in homebrew tools and libraries for Gamecube and Wii.
  - the community around raylib4Consoles
 
