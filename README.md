@@ -80,7 +80,7 @@ errors:
 -lraylib -lopengx -lwiikeyboard -lwiiuse -lbte -lfat -logc -lm
 ```
 
-- `opengx` – OpenGL 1.1 over GX (raylib renders through this)
+- `opengx` – OpenGL 1.1 over GX
 - `wiikeyboard` – USB keyboard input
 - `wiiuse` + `bte` – Wii Remote (WPAD) + Bluetooth stack
 - `fat` – SD card / storage access
